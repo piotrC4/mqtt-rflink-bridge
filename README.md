@@ -1,4 +1,4 @@
-[Homie](https://github.com/marvinroger/homie) based gateway for [RFLink]http://www.nemcon.nl/blog2
+[Homie](https://github.com/marvinroger/homie) based gateway for [RFLink](http://www.nemcon.nl/blog2)
 
 ## Features:
 * publish via MQTT in JSON format message received from RFlink gateway
