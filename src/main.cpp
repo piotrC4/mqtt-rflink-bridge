@@ -3,7 +3,7 @@
  * for WITTY module
  */
 // Constants
-#define FIRMWARE_NAME "serial-gw"
+#define FIRMWARE_NAME "rflink-bridge"
 #define FIRMWARE_VERSION "0.001"
 
 #define DEBUG 1
@@ -67,16 +67,17 @@ void setup() {
   serialNode.subscribe("to-send", serialMessageHandler);
   serialNode.subscribe("debug", debugHandler);
 
-
   Homie.setSetupFunction(setupHandler);
   Homie.setLoopFunction(loopHandler);
+
 #ifdef DEBUG
   Homie.enableLogging(true);
+#else
+  Homie.enableLogging(false);
 #endif
+
   Homie.registerNode(serialNode);
-
   Homie.onEvent(onHomieEvent);
-
   Homie.setup();
 
 }
@@ -111,7 +112,7 @@ void onHomieEvent(HomieEvent event) {
       break;
     case HOMIE_WIFI_DISCONNECTED:
       // Wi-Fi is disconnected in normal mode - reboot to defaults
-      ESP.restart();
+      // ESP.restart();
       break;
     case HOMIE_MQTT_CONNECTED:
       // MQTT is connected in normal mode
@@ -152,67 +153,84 @@ void loopHandler()
 #endif
     if (debugMode)
     {
-      Homie.setNodeProperty(serialNode,"rawmsg",msgFromRF);
+      bool pubDebugStatus = Homie.setNodeProperty(serialNode,"rawmsg",msgFromRF);
+      if (! pubDebugStatus)
+        Homie.setNodeProperty(serialNode,"error", "faild to publish debug - message too long");
     }
-    if (msgFromRF.substring(0,2) == "20") // Check for proper message header from RFLink to ESP8266
+    int startIdxEOL = 0;
+    int stopIdxEOL=0;
+    while (stopIdxEOL!=msgFromRF.length())
     {
-      int beginOfMessgeIdx = msgFromRF.indexOf(';',3);
-      int beginOfDataIdx = msgFromRF.indexOf(';',beginOfMessgeIdx+1);
-      String msgIndex = msgFromRF.substring(3,beginOfMessgeIdx+1);
-      String deviceName;
-      String message01;
-
-      if (msgFromRF.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+4)=="VER")
+      stopIdxEOL=msgFromRF.indexOf('\n',startIdxEOL);
+      if (stopIdxEOL==-1)
+        stopIdxEOL=msgFromRF.length();
+      String messageSingleRow = msgFromRF.substring(startIdxEOL,stopIdxEOL); // Signle row from serial message
+      startIdxEOL = stopIdxEOL+1; // next start index (start of next row)
+// --- start of row processing
+      if (messageSingleRow.substring(0,2) == "20") // Check for proper message header from RFLink to ESP8266
       {
-        deviceName = "VERSION";
-        message01 = msgFromRF.substring(beginOfMessgeIdx+1);
-      } else if (msgFromRF.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+5)=="PONG") {
-        deviceName = "PONG";
-        message01 = msgFromRF.substring(beginOfMessgeIdx+1);
-      } else if (msgFromRF.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+8)=="RFDEBUG") {
-        deviceName = "RFDEBUG";
-        message01 = msgFromRF.substring(beginOfMessgeIdx+1);
-      } else if (msgFromRF.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+9)=="RFUDEBUG") {
-        deviceName = "RFUDEBUG";
-        message01 = msgFromRF.substring(beginOfMessgeIdx+1);
-      } else if (msgFromRF.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+9)=="QRFDEBUG") {
-        deviceName = "QRFDEBUG";
-        message01 = msgFromRF.substring(beginOfMessgeIdx+1);
-      } else {
-        deviceName = msgFromRF.substring(beginOfMessgeIdx+1,beginOfDataIdx);
-        message01 = msgFromRF.substring(beginOfDataIdx+1);
-      }
-      int startIdx = 0;
-      int stopIdx = 0;
-      stopIdx=message01.indexOf(';',startIdx);
-      DynamicJsonBuffer jsonBuffer;
-      JsonArray& root = jsonBuffer.createArray();
-      //JsonObject& rflinkJson = root.createNestedObject().createNestedObject(deviceName);
-      JsonObject& rflinkJson = root.createNestedObject();
-      rflinkJson["msgIdx"] = msgIndex;
-      while (stopIdx>-1)
-      {
-        stopIdx=message01.indexOf(';',startIdx);
-        String subMessage = message01.substring(startIdx,stopIdx);
-        int IdxOfEqual=subMessage.indexOf('=');
-        if (IdxOfEqual>-1)
+        int beginOfMessgeIdx = messageSingleRow.indexOf(';',3);
+        int beginOfDataIdx = messageSingleRow.indexOf(';',beginOfMessgeIdx+1);
+        String msgIndex = messageSingleRow.substring(3,beginOfMessgeIdx);
+        String deviceName;
+        String message01;
+        if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+4)=="VER")
         {
-          rflinkJson[subMessage.substring(0,IdxOfEqual)]=subMessage.substring(IdxOfEqual+1);
+          deviceName = "VERSION";
+          message01 = messageSingleRow.substring(beginOfMessgeIdx+1);
+        } else if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+5)=="PONG") {
+          Serial.println("* PONG");
+          deviceName = "PONG";
+          message01 = "PONG=1;";
+        } else if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+8)=="RFDEBUG") {
+          deviceName = "RFDEBUG";
+          message01 = messageSingleRow.substring(beginOfMessgeIdx+1);
+        } else if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+9)=="RFUDEBUG") {
+          deviceName = "RFUDEBUG";
+          message01 = messageSingleRow.substring(beginOfMessgeIdx+1);
+        } else if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+9)=="QRFDEBUG") {
+          deviceName = "QRFDEBUG";
+          message01 = messageSingleRow.substring(beginOfMessgeIdx+1);
+        } else {
+          deviceName = messageSingleRow.substring(beginOfMessgeIdx+1,beginOfDataIdx);
+          message01 = messageSingleRow.substring(beginOfDataIdx+1);
         }
-        startIdx = stopIdx+1;
-      }
+        int startIdx = 0;
+        int stopIdx = 0;
 #ifdef DEBUG
-      root.printTo(Serial);
-      Serial.println();
+        Serial.print("Message to convert into JSON:");
+        Serial.println(message01);
 #endif
-      String outMessage;
-      root.printTo(outMessage);
-      Homie.setNodeProperty(serialNode,deviceName,outMessage);
-
-    } else {
-      Homie.setNodeProperty(serialNode,"unsupported",msgFromRF);
+        stopIdx=message01.indexOf(';',startIdx);
+        DynamicJsonBuffer jsonBuffer;
+        JsonArray& root = jsonBuffer.createArray();
+        JsonObject& rflinkJson = root.createNestedObject();
+        rflinkJson["msgIdx"] = msgIndex;
+        while (stopIdx>-1)
+        {
+          stopIdx=message01.indexOf(';',startIdx);
+          String subMessage = message01.substring(startIdx,stopIdx);
+          int IdxOfEqual=subMessage.indexOf('=');
+          if (IdxOfEqual>-1)
+          {
+            rflinkJson[subMessage.substring(0,IdxOfEqual)]=subMessage.substring(IdxOfEqual+1);
+          }
+          startIdx = stopIdx+1;
+        }
+#ifdef DEBUG
+        root.printTo(Serial);
+        Serial.println();
+#endif
+        String outMessage;
+        root.printTo(outMessage);
+        bool publishStatus = Homie.setNodeProperty(serialNode,deviceName,outMessage);
+        if (!publishStatus)
+          Homie.setNodeProperty(serialNode,"error", "failed to pubish " + deviceName + ", message too long");
+      } else {
+        Homie.setNodeProperty(serialNode,"unsupported",msgFromRF);
+      }
+// --- end of row processing
     }
-
   }
 }
 

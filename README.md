@@ -12,12 +12,11 @@
 
 * Do standard [RFlink wiring](http://www.nemcon.nl/blog2/wiring)
 * Connect RFLink to ESP8266
-  * Arduino MEGA TX (D1) to ESP8266 Soft Serial RX (GPIO14/D5) via logic level shifter 5V->3,3V or voltage divider (User 200Ohm and 470Ohm resistors)
+  * Arduino MEGA TX (D1) to ESP8266 Soft Serial RX (GPIO14/D5) via logic level shifter 5V->3,3V or voltage divider (use 200Ohm and 470Ohm resistors)
   * Arduino MEGA RX (D0) to ESP8266 Soft Serial TX (GPIO5/D1)
 
 
 ## MQTT messages
-
 
 <table>
 <tr>
