@@ -6,7 +6,7 @@
 * All Homie buildin features (OTA,configuration)
 
 ## Limitations
-  * Raw debug messages are not supported for long codes because of MQTT message size limit in Homie implementation, JSON response may be broken
+  * Too long messages (mostly debug) may not be published - error message will be published
 
 ## Connections
 
