@@ -58,4 +58,45 @@
 Message received from RFLink is converted to JSON array. Each field is converted to array element. Name is used in topic name.
 
 RFlink message: <code>20;1B;Keeloq;ID=e311;SWITCH=0A;CMD=ON;BAT=OK;</code> will be published in topic:
-<code>_HOMIE_PREFIX_/_node-id_/serial01/Keeloq</code> with value <code>[{"msgIdx":"1B;","ID":"e311","SWITCH":"0A","CMD":"ON","BAT":"OK"}]</code>
+<code>_HOMIE_PREFIX_/_node-id_/serial01/Keeloq</code> with value <code>{"msg":{"msgIdx":"12","ID":"e331","SWITCH":"01","CMD":"ON","BAT":"OK"}}</code>
+
+## Examples of usage
+
+* Sending RF - Publish to <code>_HOMIE_PREFIX_/_node-id_/serial01/to-send/set</code> value: <code>10;Kaku;00004d;1;OFF;</code>
+* Turn on RFDEBUG - Publish to <code>_HOMIE_PREFIX_/_node-id_/serial01/to-send/set</code> value: <code>10;RFDEBUG=ON;</code>
+* PING RFLink module - Publish to <code>_HOMIE_PREFIX_/_node-id_/serial01/to-send/set</code> value: <code>10;PING;</code>. Response will be published in topic <code>_HOMIE_PREFIX_/_node-id_/serial01/PONG</code>, example value: <code>{"msg":{"msgIdx":"15","PONG":"1"}}</code>
+
+## Usage with OpenHAB
+
+* create <code>rflink.items</code> file:
+```java
+Group gRFLink
+String rfLinkKeeloq
+        "Keeloq message [%s]" (gRFLink)
+        {mqtt="<[mosquitto:_HOMIE_PREFIX_/_node-id_/serial01/Keeloq:state:default]"}
+```
+
+* create <code>keeloq.rules</code> file:
+```java
+import org.openhab.core.library.types.*
+import org.openhab.core.persistence.*
+import org.openhab.model.script.actions.*
+
+rule keeloqUpdate
+when
+        Item rfLinkKeeloq received update
+then
+        var String Message = rfLinkKeeloq.state.toString
+        var String ID = transform("JSONPATH", "$.msg.ID", Message)
+        var String SWITCH = transform("JSONPATH", "$.msg.SWITCH", Message)
+        var String CMD = transform("JSONPATH", "$.msg.CMD", Message)
+        var String BAT = transform("JSONPATH", "$.msg.BAT", Message)
+
+        if (ID=="1111" && SWITCH=="01" && CMD=="ON")
+        {
+                // When button was pressed log it
+                logInfo("keeloq","Received message from keeloq")
+        }
+end
+
+```

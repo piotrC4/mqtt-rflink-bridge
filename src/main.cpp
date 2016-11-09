@@ -119,7 +119,7 @@ void onHomieEvent(HomieEvent event) {
       break;
     case HOMIE_MQTT_DISCONNECTED:
       // MQTT is disconnected in normal mode - force reboot
-      ESP.restart();
+      // ESP.restart();
       break;
   }
 }
@@ -137,7 +137,7 @@ void loopHandler()
     if (buttonValue == 0)
     {
       // Button pressed
-      Homie.setNodeProperty(serialNode, "button","pressed");
+      Homie.setNodeProperty(serialNode, "button","pressed",false);
     }
   }
   debouncerButton.update();
@@ -153,9 +153,9 @@ void loopHandler()
 #endif
     if (debugMode)
     {
-      bool pubDebugStatus = Homie.setNodeProperty(serialNode,"rawmsg",msgFromRF);
+      bool pubDebugStatus = Homie.setNodeProperty(serialNode,"rawmsg",msgFromRF,false);
       if (! pubDebugStatus)
-        Homie.setNodeProperty(serialNode,"error", "faild to publish debug - message too long");
+        Homie.setNodeProperty(serialNode,"error", "faild to publish debug - message too long", false);
     }
     int startIdxEOL = 0;
     int stopIdxEOL=0;
@@ -203,8 +203,8 @@ void loopHandler()
 #endif
         stopIdx=message01.indexOf(';',startIdx);
         DynamicJsonBuffer jsonBuffer;
-        JsonArray& root = jsonBuffer.createArray();
-        JsonObject& rflinkJson = root.createNestedObject();
+        JsonObject& root = jsonBuffer.createObject();
+        JsonObject& rflinkJson = root.createNestedObject("msg");
         rflinkJson["msgIdx"] = msgIndex;
         while (stopIdx>-1)
         {
@@ -218,16 +218,17 @@ void loopHandler()
           startIdx = stopIdx+1;
         }
 #ifdef DEBUG
+        Serial.print("Publish:");
         root.printTo(Serial);
         Serial.println();
 #endif
         String outMessage;
         root.printTo(outMessage);
-        bool publishStatus = Homie.setNodeProperty(serialNode,deviceName,outMessage);
+        bool publishStatus = Homie.setNodeProperty(serialNode,deviceName,outMessage,false);
         if (!publishStatus)
-          Homie.setNodeProperty(serialNode,"error", "failed to pubish " + deviceName + ", message too long");
+          Homie.setNodeProperty(serialNode,"error", "failed to pubish " + deviceName + ", message too long", false);
       } else {
-        Homie.setNodeProperty(serialNode,"unsupported",msgFromRF);
+        Homie.setNodeProperty(serialNode,"unsupported",msgFromRF, false);
       }
 // --- end of row processing
     }
@@ -249,6 +250,7 @@ void setupHandler()
 bool serialMessageHandler(String value)
 {
 #ifdef DEBUG
+   Serial.print("Send to RF:");
    Serial.println(value);
 #endif
    mySerial.println(value);
