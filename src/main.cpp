@@ -198,20 +198,23 @@ void loopHandler()
           deviceName = "PONG";
           message01 = "PONG=1;;";
         } else if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+8)=="RFDEBUG") {
-          tmpPublishMode = MODE_RAW;
           deviceName = "RFDEBUG";
+          message01 = messageSingleRow.substring(beginOfMessgeIdx+1)+";";
         } else if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+9)=="RFUDEBUG") {
-          tmpPublishMode = MODE_RAW;
           deviceName = "RFUDEBUG";
+          message01 = messageSingleRow.substring(beginOfMessgeIdx+1)+";";
         } else if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+9)=="QRFDEBUG") {
-          tmpPublishMode = MODE_RAW;
           deviceName = "QRFDEBUG";
+          message01 = messageSingleRow.substring(beginOfMessgeIdx+1)+";";
+        } else if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+6)=="DEBUG") {
+          tmpPublishMode = MODE_RAW;
+          deviceName = "DEBUG";
         } else {
           deviceName = messageSingleRow.substring(beginOfMessgeIdx+1,beginOfDataIdx);
           message01 = messageSingleRow.substring(beginOfDataIdx+1);
         }
         bool publishStatus;
-        if (EEpromData.publishMode == MODE_JSON)
+        if (tmpPublishMode == MODE_JSON)
         {
           int startIdx = 0;
           int stopIdx = 0;
@@ -244,7 +247,7 @@ void loopHandler()
           root.printTo(outMessage);
 
           publishStatus = Homie.setNodeProperty(serialNode,"JSONmsg",outMessage,false);
-        } else if (EEpromData.publishMode == MODE_RAW) {
+        } else if (tmpPublishMode == MODE_RAW) {
 #ifdef DEBUG
           Serial.println(messageSingleRow);
 #endif
@@ -263,7 +266,8 @@ void loopHandler()
           JsonObject& root = jsonBuffer.createObject();
 
 
-          if (deviceName=="VERSION" || deviceName == "PONG")
+          if ( deviceName=="VERSION" || deviceName == "PONG" || deviceName =="QRFDEBUG"
+            || deviceName=="RFDEBUG" || deviceName == "RFUDEBUG")
           {
             newTopic = deviceName;
             startIdx = 0;
