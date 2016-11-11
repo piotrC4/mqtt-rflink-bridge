@@ -15,11 +15,24 @@
 #define PIN_SOFT_SERIAL_RX 14  // D5
 #define PIN_SOFT_SERIAL_TX  5  // D1
 
+#define MODE_STANDARD 1
+#define MODE_JSON 2
+#define MODE_RAW 3
+
 // Includes
+#include <EEPROM.h>
 #include <Homie.h>
 #include <SoftwareSerial.h>
 
 // Global Objects
+
+// EEPROM data structure
+struct EEpromDataStruct {
+  int publishMode;
+};
+
+EEpromDataStruct EEpromData; // EEprom data instance
+
 HomieNode serialNode("serial01", "Serial gateway");
 Bounce debouncerButton = Bounce(); // Button debuncer
 // Software serial - connection to RF arduino
@@ -27,7 +40,6 @@ SoftwareSerial mySerial(PIN_SOFT_SERIAL_RX,PIN_SOFT_SERIAL_TX);
 
 // Global variables
 int lastButtonValue = 1; // previous state of build-in button
-bool debugMode = false;
 
 // **************************************************************
 // Functions delcaration
@@ -35,12 +47,15 @@ void loopHandler(); // Homie loop handler
 void setupHandler(); // Homie setup handler
 void onHomieEvent(HomieEvent event); // Homie event handler
 bool serialMessageHandler(String message); // Serial message hander
-bool debugHandler(String message); // Debug state change handler
+bool publishModeHandler(String message); // Method of publishing
 /***************************************************************
  * Main setup - Homie initialization
  */
 void setup() {
 
+  // Init EEPROM
+  EEPROM.begin(sizeof(EEpromData));
+  EEPROM.get(0,EEpromData);
 
   // set PIN modes
   pinMode(PIN_LED_RED, OUTPUT);
@@ -65,7 +80,7 @@ void setup() {
   Homie.setResetTrigger(PIN_BUTTON, LOW, 10000);
 
   serialNode.subscribe("to-send", serialMessageHandler);
-  serialNode.subscribe("debug", debugHandler);
+  serialNode.subscribe("publish-mode", publishModeHandler);
 
   Homie.setSetupFunction(setupHandler);
   Homie.setLoopFunction(loopHandler);
@@ -82,7 +97,10 @@ void setup() {
 
 }
 
-/****************************************************************
+/*
+
+
+***************************************************************
  * Main loop - only homie support
  */
 void loop()
@@ -97,6 +115,9 @@ void onHomieEvent(HomieEvent event) {
   switch(event) {
     case HOMIE_CONFIGURATION_MODE:
       // Configuration mode is started
+      EEpromData.publishMode = MODE_STANDARD;
+      EEPROM.put(0, EEpromData);
+      EEPROM.commit();
       break;
     case HOMIE_NORMAL_MODE:
       // Normal mode is started
@@ -151,12 +172,6 @@ void loopHandler()
     Serial.print("Received from RF:");
     Serial.println(msgFromRF);
 #endif
-    if (debugMode)
-    {
-      bool pubDebugStatus = Homie.setNodeProperty(serialNode,"rawmsg",msgFromRF,false);
-      if (! pubDebugStatus)
-        Homie.setNodeProperty(serialNode,"error", "faild to publish debug - message too long", false);
-    }
     int startIdxEOL = 0;
     int stopIdxEOL=0;
     while (stopIdxEOL!=msgFromRF.length())
@@ -174,59 +189,113 @@ void loopHandler()
         String msgIndex = messageSingleRow.substring(3,beginOfMessgeIdx);
         String deviceName;
         String message01;
+        int tmpPublishMode = EEpromData.publishMode;
         if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+4)=="VER")
         {
           deviceName = "VERSION";
           message01 = messageSingleRow.substring(beginOfMessgeIdx+1);
         } else if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+5)=="PONG") {
-          Serial.println("* PONG");
           deviceName = "PONG";
-          message01 = "PONG=1;";
+          message01 = "PONG=1;;";
         } else if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+8)=="RFDEBUG") {
+          tmpPublishMode = MODE_RAW;
           deviceName = "RFDEBUG";
-          message01 = messageSingleRow.substring(beginOfMessgeIdx+1);
         } else if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+9)=="RFUDEBUG") {
+          tmpPublishMode = MODE_RAW;
           deviceName = "RFUDEBUG";
-          message01 = messageSingleRow.substring(beginOfMessgeIdx+1);
         } else if (messageSingleRow.substring(beginOfMessgeIdx+1,beginOfMessgeIdx+9)=="QRFDEBUG") {
+          tmpPublishMode = MODE_RAW;
           deviceName = "QRFDEBUG";
-          message01 = messageSingleRow.substring(beginOfMessgeIdx+1);
         } else {
           deviceName = messageSingleRow.substring(beginOfMessgeIdx+1,beginOfDataIdx);
           message01 = messageSingleRow.substring(beginOfDataIdx+1);
         }
-        int startIdx = 0;
-        int stopIdx = 0;
-#ifdef DEBUG
-        Serial.print("Message to convert into JSON:");
-        Serial.println(message01);
-#endif
-        stopIdx=message01.indexOf(';',startIdx);
-        DynamicJsonBuffer jsonBuffer;
-        JsonObject& root = jsonBuffer.createObject();
-        JsonObject& rflinkJson = root.createNestedObject("msg");
-        rflinkJson["msgIdx"] = msgIndex;
-        while (stopIdx>-1)
+        bool publishStatus;
+        if (EEpromData.publishMode == MODE_JSON)
         {
-          stopIdx=message01.indexOf(';',startIdx);
-          String subMessage = message01.substring(startIdx,stopIdx);
-          int IdxOfEqual=subMessage.indexOf('=');
-          if (IdxOfEqual>-1)
-          {
-            rflinkJson[subMessage.substring(0,IdxOfEqual)]=subMessage.substring(IdxOfEqual+1);
-          }
-          startIdx = stopIdx+1;
-        }
+          int startIdx = 0;
+          int stopIdx = 0;
 #ifdef DEBUG
-        Serial.print("Publish:");
-        root.printTo(Serial);
-        Serial.println();
+          Serial.print("Message to convert into JSON:");
+          Serial.println(message01);
 #endif
-        String outMessage;
-        root.printTo(outMessage);
-        bool publishStatus = Homie.setNodeProperty(serialNode,deviceName,outMessage,false);
+          DynamicJsonBuffer jsonBuffer;
+          JsonObject& root = jsonBuffer.createObject();
+          root["msgIdx"] = msgIndex;
+          root["Name"] = deviceName;
+          stopIdx=message01.indexOf(';',startIdx);
+          while (stopIdx>-1)
+          {
+            stopIdx=message01.indexOf(';',startIdx);
+            String subMessage = message01.substring(startIdx,stopIdx);
+            int IdxOfEqual=subMessage.indexOf('=');
+            if (IdxOfEqual>-1)
+            {
+              root[subMessage.substring(0,IdxOfEqual)]=subMessage.substring(IdxOfEqual+1);
+            }
+            startIdx = stopIdx+1;
+          }
+#ifdef DEBUG
+          Serial.print("Publish:");
+          root.printTo(Serial);
+          Serial.println();
+#endif
+          String outMessage;
+          root.printTo(outMessage);
+
+          publishStatus = Homie.setNodeProperty(serialNode,"JSONmsg",outMessage,false);
+        } else if (EEpromData.publishMode == MODE_RAW) {
+#ifdef DEBUG
+          Serial.println(messageSingleRow);
+#endif
+          publishStatus = Homie.setNodeProperty(serialNode,"rawmsg",messageSingleRow,false);
+        } else {
+          // Defeult publish method - topic path
+          message01.remove(message01.length()-1);
+          Serial.println("To parse:" + message01);
+          int firstEQIdx = message01.indexOf('=');
+          int preMsgIdx = message01.indexOf(';');
+
+          String newTopic;
+          int startIdx;
+          int stopIdx = 0;
+          DynamicJsonBuffer jsonBuffer;
+          JsonObject& root = jsonBuffer.createObject();
+
+
+          if (deviceName=="VERSION" || deviceName == "PONG")
+          {
+            newTopic = deviceName;
+            startIdx = 0;
+          } else {
+            newTopic = deviceName + '/' + message01.substring(firstEQIdx+1,preMsgIdx);
+            startIdx = preMsgIdx+1;
+          }
+          stopIdx=message01.indexOf(';',startIdx);
+          while (stopIdx>-1)
+          {
+            stopIdx=message01.indexOf(';',startIdx);
+            String subMessage = message01.substring(startIdx,stopIdx);
+            int IdxOfEqual=subMessage.indexOf('=');
+            if (IdxOfEqual>-1)
+            {
+              root[subMessage.substring(0,IdxOfEqual)]=subMessage.substring(IdxOfEqual+1);
+            }
+            startIdx = stopIdx+1;
+          }
+
+          String outMessage;
+          root.printTo(outMessage);
+
+#ifdef DEBUG
+          Serial.println("Publish to: "+newTopic+" -> "+outMessage);
+#endif
+
+          publishStatus = Homie.setNodeProperty(serialNode,newTopic,outMessage,false);
+        }
         if (!publishStatus)
           Homie.setNodeProperty(serialNode,"error", "failed to pubish " + deviceName + ", message too long", false);
+
       } else {
         Homie.setNodeProperty(serialNode,"unsupported",msgFromRF, false);
       }
@@ -240,10 +309,30 @@ void loopHandler()
  */
 void setupHandler()
 {
-  Homie.setNodeProperty(serialNode,"debug","false");
+  Homie.setNodeProperty(serialNode,"publish-mode", String(EEpromData.publishMode));
   lastButtonValue = digitalRead(PIN_BUTTON);
 }
-
+/****************************************************************
+ * publish Method Handler
+ */
+bool publishModeHandler(String message)
+{
+  int currentMode = EEpromData.publishMode;
+  if (message == "JSON" || message == String(MODE_JSON))
+  {
+    EEpromData.publishMode = MODE_JSON;
+  } else if (message == "RAW" || message == String(MODE_RAW)) {
+    EEpromData.publishMode = MODE_RAW;
+  } else {
+    EEpromData.publishMode = MODE_STANDARD;
+  }
+  if (currentMode != EEpromData.publishMode)
+  {
+    EEPROM.put(0, EEpromData);
+    EEPROM.commit();
+    Homie.setNodeProperty(serialNode,"publish-mode", String(EEpromData.publishMode));
+  }
+}
 /****************************************************************
  * Serial message handler
  */
@@ -255,19 +344,4 @@ bool serialMessageHandler(String value)
 #endif
    mySerial.println(value);
    return true;
-}
-/****************************************************************
- * Debug message handler
- */
-bool debugHandler(String message)
-{
-  if (message=="true" || message=="1" || message=="ON")
-  {
-    debugMode =true;
-    Homie.setNodeProperty(serialNode,"debug","true");
-  } else {
-    debugMode = false;
-    Homie.setNodeProperty(serialNode,"debug","false");
-  }
-  return true;
 }
