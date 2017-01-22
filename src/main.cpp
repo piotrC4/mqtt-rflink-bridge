@@ -48,6 +48,7 @@ void setupHandler(); // Homie setup handler
 void onHomieEvent(HomieEvent event); // Homie event handler
 bool serialMessageHandler(String message); // Serial message hander
 bool publishModeHandler(String message); // Method of publishing
+
 /***************************************************************
  * Main setup - Homie initialization
  */
