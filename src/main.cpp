@@ -45,9 +45,9 @@ int lastButtonValue = 1; // previous state of build-in button
 // Functions delcaration
 void loopHandler(); // Homie loop handler
 void setupHandler(); // Homie setup handler
-void onHomieEvent(HomieEvent event); // Homie event handler
-bool serialMessageHandler(String message); // Serial message hander
-bool publishModeHandler(String message); // Method of publishing
+void onHomieEvent(const HomieEvent& event); // Homie event handler
+bool serialMessageHandler(const HomieRange& range, String message); // Serial message hander
+bool publishModeHandler(const HomieRange& range, String message); // Method of publishing
 
 /***************************************************************
  * Main setup - Homie initialization
@@ -75,24 +75,24 @@ void setup() {
   mySerial.begin(57600);
 
   /* Initiate homie object */
-  Homie.setFirmware(FIRMWARE_NAME, FIRMWARE_VERSION);
+  Homie_setFirmware(FIRMWARE_NAME, FIRMWARE_VERSION);
 
   Homie.setLedPin(PIN_LED_RED, HIGH);
   Homie.setResetTrigger(PIN_BUTTON, LOW, 10000);
 
-  serialNode.subscribe("to-send", serialMessageHandler);
-  serialNode.subscribe("publish-mode", publishModeHandler);
+  serialNode.advertise("to-send").settable(serialMessageHandler);
+  serialNode.advertise("publish-mode").settable(publishModeHandler);
 
   Homie.setSetupFunction(setupHandler);
   Homie.setLoopFunction(loopHandler);
 
 #ifdef DEBUG
-  Homie.enableLogging(true);
+
 #else
-  Homie.enableLogging(false);
+  Homie.disableLogging();
 #endif
 
-  Homie.registerNode(serialNode);
+
   Homie.onEvent(onHomieEvent);
   Homie.setup();
 
@@ -112,34 +112,29 @@ void loop()
 /***************************************************************
  * Homie event
  */
-void onHomieEvent(HomieEvent event) {
-  switch(event) {
-    case HOMIE_CONFIGURATION_MODE:
+void onHomieEvent(const HomieEvent& event) {
+  switch(event.type) {
+    case HomieEventType::CONFIGURATION_MODE:
       // Configuration mode is started
       EEpromData.publishMode = MODE_STANDARD;
       EEPROM.put(0, EEpromData);
       EEPROM.commit();
       break;
-    case HOMIE_NORMAL_MODE:
+    case HomieEventType::NORMAL_MODE:
       // Normal mode is started
       break;
-    case HOMIE_OTA_MODE:
-      // OTA mode is started
-      break;
-    case HOMIE_ABOUT_TO_RESET:
-      // The device is about to reset
-      break;
-    case HOMIE_WIFI_CONNECTED:
+
+    case HomieEventType::WIFI_CONNECTED:
       // Wi-Fi is connected in normal mode - force reboot
       break;
-    case HOMIE_WIFI_DISCONNECTED:
+    case HomieEventType::WIFI_DISCONNECTED:
       // Wi-Fi is disconnected in normal mode - reboot to defaults
       // ESP.restart();
       break;
-    case HOMIE_MQTT_CONNECTED:
+    case HomieEventType::MQTT_READY:
       // MQTT is connected in normal mode
       break;
-    case HOMIE_MQTT_DISCONNECTED:
+    case HomieEventType::MQTT_DISCONNECTED:
       // MQTT is disconnected in normal mode - force reboot
       // ESP.restart();
       break;
@@ -159,7 +154,7 @@ void loopHandler()
     if (buttonValue == 0)
     {
       // Button pressed
-      Homie.setNodeProperty(serialNode, "button","pressed",false);
+      serialNode.setProperty("button").send("pressed");
     }
   }
   debouncerButton.update();
@@ -247,12 +242,12 @@ void loopHandler()
           String outMessage;
           root.printTo(outMessage);
 
-          publishStatus = Homie.setNodeProperty(serialNode,"JSONmsg",outMessage,false);
+          publishStatus = serialNode.setProperty("JSONmsg").send(outMessage);
         } else if (tmpPublishMode == MODE_RAW) {
 #ifdef DEBUG
           Serial.println(messageSingleRow);
 #endif
-          publishStatus = Homie.setNodeProperty(serialNode,"rawmsg",messageSingleRow,false);
+          publishStatus = serialNode.setProperty("rawmsg").send(messageSingleRow);
         } else {
           // Defeult publish method - topic path
           message01.remove(message01.length()-1);
@@ -296,13 +291,13 @@ void loopHandler()
           Serial.println("Publish to: "+newTopic+" -> "+outMessage);
 #endif
 
-          publishStatus = Homie.setNodeProperty(serialNode,newTopic,outMessage,false);
+          publishStatus = serialNode.setProperty(newTopic).send(outMessage);
         }
         if (!publishStatus)
-          Homie.setNodeProperty(serialNode,"error", "failed to pubish " + deviceName + ", message too long", false);
+          serialNode.setProperty("error").send("failed to pubish " + deviceName + ", message too long");
 
       } else {
-        Homie.setNodeProperty(serialNode,"unsupported",msgFromRF, false);
+        serialNode.setProperty("unsupported").send(msgFromRF);
       }
 // --- end of row processing
     }
@@ -314,13 +309,13 @@ void loopHandler()
  */
 void setupHandler()
 {
-  Homie.setNodeProperty(serialNode,"publish-mode", String(EEpromData.publishMode));
+  serialNode.setProperty("publish-mode").send(String(EEpromData.publishMode));
   lastButtonValue = digitalRead(PIN_BUTTON);
 }
 /****************************************************************
  * publish Method Handler
  */
-bool publishModeHandler(String message)
+bool publishModeHandler(const HomieRange& range,String message)
 {
   int currentMode = EEpromData.publishMode;
   if (message == "JSON" || message == String(MODE_JSON))
@@ -335,13 +330,13 @@ bool publishModeHandler(String message)
   {
     EEPROM.put(0, EEpromData);
     EEPROM.commit();
-    Homie.setNodeProperty(serialNode,"publish-mode", String(EEpromData.publishMode));
+    serialNode.setProperty("publish-mode").send(String(EEpromData.publishMode));
   }
 }
 /****************************************************************
  * Serial message handler
  */
-bool serialMessageHandler(String value)
+bool serialMessageHandler(const HomieRange& range, String value)
 {
 #ifdef DEBUG
    Serial.print("Send to RF:");
