@@ -3,8 +3,6 @@
  * for WITTY module
  */
 // Constants
-#define FIRMWARE_NAME "rflink-bridge"
-#define FIRMWARE_VERSION "0.001"
 
 #define DEBUG 1
 
@@ -75,7 +73,7 @@ void setup() {
   mySerial.begin(57600);
 
   /* Initiate homie object */
-  Homie_setFirmware(FIRMWARE_NAME, FIRMWARE_VERSION);
+  Homie_setFirmware(FIRMWARE_NAME, FIRMWARE_VER);
 
   Homie.setLedPin(PIN_LED_RED, HIGH);
   Homie.setResetTrigger(PIN_BUTTON, LOW, 10000);

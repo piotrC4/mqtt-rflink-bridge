@@ -1,4 +1,4 @@
-[Homie](https://github.com/marvinroger/homie) based bridge MQTT to [RFLink module](http://www.nemcon.nl/blog2)
+[Homie](https://github.com/homieiot/convention) based bridge MQTT to [RFLink module](http://www.nemcon.nl/blog2)
 
 ## Features:
 * publish via MQTT in JSON format message received from RFlink gateway
